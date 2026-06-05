@@ -11,8 +11,13 @@ class ScheduleConfig(BaseModel):
     reply_poll_minutes: int = 5
 
 
+class RoleConfig(BaseModel):
+    name: str
+    keywords: list[str] = []
+
+
 class SearchConfig(BaseModel):
-    roles: list[str] = ["Software Engineer"]
+    roles: list[RoleConfig] = []
     locations: list[str] = ["Remote"]
     max_results_per_query: int = 20
 

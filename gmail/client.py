@@ -30,7 +30,7 @@ class GmailClient:
         if not jobs:
             return
 
-        roles_str = ", ".join(self.cfg.search.roles)
+        roles_str = ", ".join(r.name for r in self.cfg.search.roles)
         subject = (
             f"{self.cfg.email.subject_prefix} "
             f"{len(jobs)} new job{'s' if len(jobs) != 1 else ''} "

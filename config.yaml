@@ -4,9 +4,37 @@ schedule:
 
 search:
   roles:
-    - "Software Engineer"
-    - "Data Analyst"
-    - "Business Analyst"
+    - name: "Data Analyst"
+      keywords:
+        - "SQL"
+        - "Python"
+        - "Tableau"
+        - "Power BI"
+        - "Excel"
+        - "pandas"
+        - "data visualization"
+        - "ETL"
+        - "MySQL"
+        - "PostgreSQL"
+        - "statistics"
+        - "Looker"
+        - "BigQuery"
+
+    - name: "Business Analyst"
+      keywords:
+        - "SQL"
+        - "Agile"
+        - "JIRA"
+        - "requirements"
+        - "stakeholder"
+        - "Power BI"
+        - "process improvement"
+        - "user stories"
+        - "Confluence"
+        - "Scrum"
+        - "Visio"
+        - "data analysis"
+
   locations:
     - "Remote"
     - "Toronto, ON"

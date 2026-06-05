@@ -52,7 +52,7 @@
   <div class="header">
     <h1>{{ jobs|length }} new job{{ 's' if jobs|length != 1 else '' }}</h1>
     <p>
-      {{ roles | join(' · ') }}
+      {{ roles | map(attribute='name') | join(' · ') }}
       &nbsp;·&nbsp;
       {{ generated_at.strftime('%b %d, %Y at %H:%M UTC') }}
     </p>

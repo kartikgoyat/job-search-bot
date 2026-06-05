@@ -41,11 +41,11 @@ class Explorer:
 
             for role in self.cfg.search.roles:
                 for location in self.cfg.search.locations:
-                    jobs = self._search_one(page, role, location)
+                    jobs = self._search_one(page, role.name, role.keywords, location)
                     for j in jobs:
                         if j.id not in seen_ids:
                             seen_ids.add(j.id)
-                            j.searched_role = role
+                            j.searched_role = role.name
                             results.append(j)
                     _delay(6, 12)
 
@@ -54,10 +54,16 @@ class Explorer:
         log.info("Explorer found %d unique jobs", len(results))
         return results
 
-    def _search_one(self, page: Page, role: str, location: str) -> list[JobPost]:
+    def _search_one(
+        self, page: Page, role: str, keywords: list[str], location: str
+    ) -> list[JobPost]:
+        # Combine role name + keywords into the query so Eluta finds more relevant postings
+        query = role
+        if keywords:
+            query = f"{role} {' '.join(keywords)}"
         url = (
             f"https://www.eluta.ca/search"
-            f"?q={quote_plus(role)}"
+            f"?q={quote_plus(query)}"
             f"&l={quote_plus(location)}"
         )
         log.info("Searching: %s", url)
