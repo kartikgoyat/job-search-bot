@@ -39,13 +39,15 @@ class Explorer:
             )
             page = ctx.new_page()
 
-            for location in self.cfg.search.locations:
-                jobs = self._search_one(page, self.cfg.search.role, location)
-                for j in jobs:
-                    if j.id not in seen_ids:
-                        seen_ids.add(j.id)
-                        results.append(j)
-                _delay(6, 12)
+            for role in self.cfg.search.roles:
+                for location in self.cfg.search.locations:
+                    jobs = self._search_one(page, role, location)
+                    for j in jobs:
+                        if j.id not in seen_ids:
+                            seen_ids.add(j.id)
+                            j.searched_role = role
+                            results.append(j)
+                    _delay(6, 12)
 
             browser.close()
 

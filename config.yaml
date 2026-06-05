@@ -3,10 +3,10 @@ schedule:
   reply_poll_minutes: 5
 
 search:
-  role: "Software Engineer"
-  keywords:
-    - "Python"
-    - "Backend"
+  roles:
+    - "Software Engineer"
+    - "Data Analyst"
+    - "Business Analyst"
   locations:
     - "Remote"
     - "Toronto, ON"
@@ -25,7 +25,7 @@ resume:
   province: "ON"
   country: "Canada"
   linkedin_url: ""
-  resume_pdf_path: ""        # absolute path to your PDF resume for file-upload fields
+  resume_pdf_path: ""
   legally_authorized: true
   requires_sponsorship: false
   years_experience: 0

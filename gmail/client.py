@@ -30,10 +30,11 @@ class GmailClient:
         if not jobs:
             return
 
+        roles_str = ", ".join(self.cfg.search.roles)
         subject = (
             f"{self.cfg.email.subject_prefix} "
             f"{len(jobs)} new job{'s' if len(jobs) != 1 else ''} "
-            f"— {self.cfg.search.role}"
+            f"— {roles_str}"
         )
         html = self._render_digest(jobs)
         text = self._plain_digest(jobs)
@@ -72,7 +73,7 @@ class GmailClient:
         )
         return env.get_template("digest.html.j2").render(
             jobs=jobs,
-            role=self.cfg.search.role,
+            roles=self.cfg.search.roles,
             generated_at=datetime.utcnow(),
         )
 

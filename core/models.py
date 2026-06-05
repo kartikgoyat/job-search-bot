@@ -16,6 +16,7 @@ class JobPost(BaseModel):
     eluta_url: str
     apply_url: str
     salary: str = ""
+    searched_role: str = ""
     seen_at: datetime = Field(default_factory=datetime.utcnow)
     batch_id: str = ""
 

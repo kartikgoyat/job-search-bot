@@ -12,8 +12,7 @@ class ScheduleConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    role: str = "Software Engineer"
-    keywords: list[str] = []
+    roles: list[str] = ["Software Engineer"]
     locations: list[str] = ["Remote"]
     max_results_per_query: int = 20
 

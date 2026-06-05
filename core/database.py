@@ -30,9 +30,10 @@ class JobRow(Base):
     location    = Column(String, default="")
     eluta_url   = Column(String, default="")
     apply_url   = Column(String, default="")
-    salary      = Column(String, default="")
-    seen_at     = Column(DateTime, default=datetime.utcnow)
-    batch_id    = Column(String, default="")
+    salary        = Column(String, default="")
+    searched_role = Column(String, default="")
+    seen_at       = Column(DateTime, default=datetime.utcnow)
+    batch_id      = Column(String, default="")
     applied     = Column(Boolean, default=False)
     applied_at  = Column(DateTime, nullable=True)
 
@@ -85,6 +86,7 @@ def save_jobs(posts: list[JobPost]) -> int:
                     id=p.id, title=p.title, company=p.company,
                     location=p.location, eluta_url=p.eluta_url,
                     apply_url=p.apply_url, salary=p.salary,
+                    searched_role=p.searched_role,
                     seen_at=p.seen_at, batch_id=p.batch_id,
                 ))
                 inserted += 1
