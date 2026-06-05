@@ -1,0 +1,48 @@
+name: Job Search Bot
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'   # every 3 hours
+  workflow_dispatch:          # manual trigger from GitHub UI
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Restore jobs.db from cache so we don't re-notify about seen jobs
+      - name: Restore jobs database
+        uses: actions/cache@v4
+        with:
+          path: jobs.db
+          key: jobs-db-${{ github.run_id }}
+          restore-keys: jobs-db-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Run search cycle
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python main.py search
+
+      # Save updated jobs.db so next run can deduplicate
+      - name: Save jobs database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: jobs.db
+          key: jobs-db-${{ github.run_id }}

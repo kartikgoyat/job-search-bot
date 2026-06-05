@@ -1,0 +1,31 @@
+schedule:
+  search_interval_hours: 3
+  reply_poll_minutes: 5
+
+search:
+  role: "Software Engineer"
+  keywords:
+    - "Python"
+    - "Backend"
+  locations:
+    - "Remote"
+    - "Toronto, ON"
+  max_results_per_query: 20
+
+email:
+  recipient: "kartikgoyat@gmail.com"
+  subject_prefix: "[Job Bot]"
+
+resume:
+  first_name: "Kartik"
+  last_name: "Goyat"
+  email: "kartikgoyat@gmail.com"
+  phone: ""
+  city: "Toronto"
+  province: "ON"
+  country: "Canada"
+  linkedin_url: ""
+  resume_pdf_path: ""        # absolute path to your PDF resume for file-upload fields
+  legally_authorized: true
+  requires_sponsorship: false
+  years_experience: 0
