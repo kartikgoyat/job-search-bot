@@ -12,24 +12,12 @@ from core.models import JobPost
 
 log = logging.getLogger(__name__)
 
+BASE_URL = "https://www.eluta.ca"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
-
-# All known Eluta job-card selectors, tried in order
-CARD_SELECTORS = [
-    "div.result",
-    "li.result",
-    "article.result",
-    "div.job-result",
-    "div[class*='job-listing']",
-    "div[class*='jobListing']",
-    "div[class*='job_listing']",
-    "div[class*='posting']",
-    "article",
-]
 
 
 class Explorer:
@@ -75,116 +63,82 @@ class Explorer:
             query = f"{role} {' '.join(keywords)}"
 
         url = (
-            f"https://www.eluta.ca/search"
+            f"{BASE_URL}/search"
             f"?q={quote_plus(query)}"
             f"&l={quote_plus(location)}"
         )
         log.info("Fetching: %s", url)
 
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            page.goto(url, wait_until="networkidle", timeout=30_000)
         except Exception as exc:
             log.warning("Page load failed: %s", exc)
             return []
 
-        _delay(2, 3)
+        _delay(1, 2)
+        log.info("Page title: %r", page.title())
 
-        # Log page title so we can detect CAPTCHAs or error pages
-        title = page.title()
-        log.info("Page title: %r", title)
-
-        # Try each card selector until one returns results
-        cards = []
-        for selector in CARD_SELECTORS:
-            cards = page.query_selector_all(selector)
-            if cards:
-                log.info("Matched selector %r — %d cards", selector, len(cards))
-                break
+        # Eluta job cards are div.organic-job
+        cards = page.query_selector_all("div.organic-job")
+        log.info("Found %d cards for '%s' in '%s'", len(cards), role, location)
 
         if not cards:
-            # Dump a snippet of the HTML to help debug selector mismatches
-            html_snippet = page.content()[:3000]
-            log.warning("No cards found for '%s' in '%s'. HTML snippet:\n%s", role, location, html_snippet)
+            log.warning("No cards — page snippet:\n%s", page.content()[:2000])
             return []
 
-        # --- Collect raw data from cards WITHOUT navigating away ---
-        # Navigating inside _parse_card would make remaining handles stale.
-        raw: list[dict] = []
+        jobs: list[JobPost] = []
         for card in cards[: self.cfg.search.max_results_per_query]:
             try:
-                data = self._extract_card_data(card)
-                if data:
-                    raw.append(data)
+                job = self._parse_card(card)
+                if job:
+                    jobs.append(job)
             except Exception as exc:
-                log.debug("Card extract error: %s", exc)
-
-        log.info("Extracted %d raw job entries for '%s'", len(raw), role)
-
-        # --- Build JobPost objects (eluta_url doubles as apply_url for now) ---
-        jobs: list[JobPost] = []
-        for d in raw:
-            jobs.append(JobPost(
-                title=d["title"],
-                company=d.get("company", ""),
-                location=d.get("location", ""),
-                eluta_url=d["url"],
-                apply_url=d["url"],   # user clicks through to Eluta which links to employer
-                salary=d.get("salary", ""),
-            ))
+                log.debug("Card parse error: %s", exc)
 
         return jobs
 
-    def _extract_card_data(self, card) -> dict | None:
-        """
-        Pull title, URL, company, location from a card element WITHOUT
-        navigating the page (so we don't invalidate sibling handles).
-        """
-        # Try several patterns for the job title link
-        title_el = card.query_selector(
-            "h2 a, h3 a, h4 a, "
-            "a.jobtitle, a[class*='title'], a[class*='Title'], "
-            "a[class*='job'], a[class*='Job'], "
-            "a[itemprop='title'], "
-            "a"   # last-resort: first anchor in card
-        )
+    def _parse_card(self, card) -> JobPost | None:
+        # --- Title ---
+        title_el = card.query_selector("a.lk-job-title")
         if not title_el:
             return None
-
-        title = (title_el.inner_text() or "").strip()
-        if not title or len(title) < 3:
+        title = (title_el.get_attribute("title") or title_el.inner_text() or "").strip()
+        if not title:
             return None
 
-        href = title_el.get_attribute("href") or ""
-        if not href:
-            return None
-        if href.startswith("/"):
-            href = "https://www.eluta.ca" + href
+        # --- URL (real path is in data-url, not href which is "#!") ---
+        data_url = title_el.get_attribute("data-url") or ""
+        if data_url:
+            eluta_url = data_url if data_url.startswith("http") else f"{BASE_URL}/{data_url}"
+        else:
+            return None   # no usable link, skip card
 
-        # Company
-        company_el = card.query_selector(
-            "span.company, span[class*='company'], span[class*='employer'], "
-            "[class*='company'], [class*='employer'], [itemprop='hiringOrganization']"
-        )
-        company = (company_el.inner_text() if company_el else "").strip()
+        # --- Company ---
+        company_el = card.query_selector("a.lk-employer, a.employer")
+        company = (company_el.get_attribute("title") or
+                   (company_el.inner_text() if company_el else "") or "").strip()
+        # Strip "See all jobs at " prefix that sometimes appears in title attr
+        if company.lower().startswith("see all jobs at "):
+            company = company[len("see all jobs at "):].strip()
 
-        # Location
-        loc_el = card.query_selector(
-            "span.location, span[class*='location'], span[class*='city'], "
-            "[class*='location'], [itemprop='addressLocality']"
-        )
+        # --- Location ---
+        loc_el = card.query_selector("span.location span")
         location = (loc_el.inner_text() if loc_el else "").strip()
 
-        # Salary
-        sal_el = card.query_selector("[class*='salary'], [class*='pay'], [class*='wage']")
+        # --- Salary ---
+        sal_el = card.query_selector("span.position-salary")
         salary = (sal_el.inner_text() if sal_el else "").strip()
+        # Collapse whitespace / newlines inside salary text
+        salary = " ".join(salary.split())
 
-        return {
-            "title": title,
-            "url": href,
-            "company": company,
-            "location": location,
-            "salary": salary,
-        }
+        return JobPost(
+            title=title,
+            company=company,
+            location=location,
+            eluta_url=eluta_url,
+            apply_url=eluta_url,
+            salary=salary,
+        )
 
 
 def _delay(lo: float, hi: float) -> None:
