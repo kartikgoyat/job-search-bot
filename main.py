@@ -74,14 +74,34 @@ def cmd_test_email(cfg) -> None:
     console.print(f"[green]Test email sent to {cfg.email.recipient}[/green]")
 
 
+def cmd_debug_scrape(cfg) -> None:
+    """Scrape without saving or emailing — prints raw results to terminal."""
+    from agents.explorer import Explorer
+    jobs = Explorer(cfg).search()
+    if not jobs:
+        console.print("[red]No jobs found. Check logs above for the HTML snippet.[/red]")
+        return
+    table = Table(title=f"Raw scrape results ({len(jobs)} jobs)", show_lines=True)
+    table.add_column("Title", min_width=22)
+    table.add_column("Company", min_width=14)
+    table.add_column("Location", min_width=12)
+    table.add_column("Role", min_width=14)
+    table.add_column("URL", min_width=30)
+    for j in jobs:
+        table.add_row(j.title, j.company or "—", j.location or "—",
+                      j.searched_role or "—", j.eluta_url[:50])
+    console.print(table)
+
+
 def main() -> None:
     from core.config import load_config
     cfg = load_config()
 
     commands = {
-        "search":     cmd_search,
-        "status":     cmd_status,
-        "test-email": cmd_test_email,
+        "search":       cmd_search,
+        "status":       cmd_status,
+        "test-email":   cmd_test_email,
+        "debug-scrape": cmd_debug_scrape,
     }
 
     arg = sys.argv[1] if len(sys.argv) > 1 else "daemon"
@@ -93,7 +113,7 @@ def main() -> None:
     else:
         console.print(
             f"[red]Unknown command: {arg}[/red]\n"
-            "Available: daemon (default), search, status, test-email"
+            "Available: daemon (default), search, status, test-email, debug-scrape"
         )
         sys.exit(1)
 

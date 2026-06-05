@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import quote_plus
 
 from playwright.sync_api import Page, sync_playwright
 
@@ -17,6 +17,19 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+
+# All known Eluta job-card selectors, tried in order
+CARD_SELECTORS = [
+    "div.result",
+    "li.result",
+    "article.result",
+    "div.job-result",
+    "div[class*='job-listing']",
+    "div[class*='jobListing']",
+    "div[class*='job_listing']",
+    "div[class*='posting']",
+    "article",
+]
 
 
 class Explorer:
@@ -51,126 +64,127 @@ class Explorer:
 
             browser.close()
 
-        log.info("Explorer found %d unique jobs", len(results))
+        log.info("Explorer: %d unique jobs total", len(results))
         return results
 
     def _search_one(
         self, page: Page, role: str, keywords: list[str], location: str
     ) -> list[JobPost]:
-        # Combine role name + keywords into the query so Eluta finds more relevant postings
         query = role
         if keywords:
             query = f"{role} {' '.join(keywords)}"
+
         url = (
             f"https://www.eluta.ca/search"
             f"?q={quote_plus(query)}"
             f"&l={quote_plus(location)}"
         )
-        log.info("Searching: %s", url)
+        log.info("Fetching: %s", url)
+
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30_000)
         except Exception as exc:
-            log.warning("Page load failed for %s: %s", url, exc)
+            log.warning("Page load failed: %s", exc)
             return []
 
-        _delay(2, 4)
+        _delay(2, 3)
 
-        jobs: list[JobPost] = []
-        cards = page.query_selector_all("div.result, div.job-result, li.result")
+        # Log page title so we can detect CAPTCHAs or error pages
+        title = page.title()
+        log.info("Page title: %r", title)
+
+        # Try each card selector until one returns results
+        cards = []
+        for selector in CARD_SELECTORS:
+            cards = page.query_selector_all(selector)
+            if cards:
+                log.info("Matched selector %r — %d cards", selector, len(cards))
+                break
 
         if not cards:
-            # Fallback: try generic job card selectors
-            cards = page.query_selector_all("[class*='result']")
+            # Dump a snippet of the HTML to help debug selector mismatches
+            html_snippet = page.content()[:3000]
+            log.warning("No cards found for '%s' in '%s'. HTML snippet:\n%s", role, location, html_snippet)
+            return []
 
-        log.info("Found %d cards for '%s' in '%s'", len(cards), role, location)
-
+        # --- Collect raw data from cards WITHOUT navigating away ---
+        # Navigating inside _parse_card would make remaining handles stale.
+        raw: list[dict] = []
         for card in cards[: self.cfg.search.max_results_per_query]:
             try:
-                job = self._parse_card(card, page)
-                if job:
-                    jobs.append(job)
+                data = self._extract_card_data(card)
+                if data:
+                    raw.append(data)
             except Exception as exc:
-                log.debug("Card parse error: %s", exc)
-            _delay(0.3, 0.8)
+                log.debug("Card extract error: %s", exc)
+
+        log.info("Extracted %d raw job entries for '%s'", len(raw), role)
+
+        # --- Build JobPost objects (eluta_url doubles as apply_url for now) ---
+        jobs: list[JobPost] = []
+        for d in raw:
+            jobs.append(JobPost(
+                title=d["title"],
+                company=d.get("company", ""),
+                location=d.get("location", ""),
+                eluta_url=d["url"],
+                apply_url=d["url"],   # user clicks through to Eluta which links to employer
+                salary=d.get("salary", ""),
+            ))
 
         return jobs
 
-    def _parse_card(self, card, page: Page) -> JobPost | None:
-        # Title and eluta URL
-        title_el = card.query_selector("a.jobtitle, a[class*='title'], h2 a, h3 a, a")
+    def _extract_card_data(self, card) -> dict | None:
+        """
+        Pull title, URL, company, location from a card element WITHOUT
+        navigating the page (so we don't invalidate sibling handles).
+        """
+        # Try several patterns for the job title link
+        title_el = card.query_selector(
+            "h2 a, h3 a, h4 a, "
+            "a.jobtitle, a[class*='title'], a[class*='Title'], "
+            "a[class*='job'], a[class*='Job'], "
+            "a[itemprop='title'], "
+            "a"   # last-resort: first anchor in card
+        )
         if not title_el:
             return None
 
         title = (title_el.inner_text() or "").strip()
-        if not title:
+        if not title or len(title) < 3:
             return None
 
         href = title_el.get_attribute("href") or ""
+        if not href:
+            return None
         if href.startswith("/"):
             href = "https://www.eluta.ca" + href
-        eluta_url = href
 
         # Company
         company_el = card.query_selector(
-            "span.company, [class*='company'], [class*='employer']"
+            "span.company, span[class*='company'], span[class*='employer'], "
+            "[class*='company'], [class*='employer'], [itemprop='hiringOrganization']"
         )
         company = (company_el.inner_text() if company_el else "").strip()
 
         # Location
         loc_el = card.query_selector(
-            "span.location, [class*='location'], [class*='city']"
+            "span.location, span[class*='location'], span[class*='city'], "
+            "[class*='location'], [itemprop='addressLocality']"
         )
         location = (loc_el.inner_text() if loc_el else "").strip()
 
-        # Salary (optional)
-        sal_el = card.query_selector("[class*='salary'], [class*='pay']")
+        # Salary
+        sal_el = card.query_selector("[class*='salary'], [class*='pay'], [class*='wage']")
         salary = (sal_el.inner_text() if sal_el else "").strip()
 
-        # Resolve apply_url by following the eluta listing page
-        apply_url = self._resolve_apply_url(page, eluta_url) or eluta_url
-
-        return JobPost(
-            title=title,
-            company=company,
-            location=location,
-            eluta_url=eluta_url,
-            apply_url=apply_url,
-            salary=salary,
-        )
-
-    def _resolve_apply_url(self, page: Page, eluta_url: str) -> str | None:
-        """
-        Visit the Eluta listing page and extract the employer's direct apply link.
-        Returns None if we can't resolve it (caller falls back to eluta_url).
-        """
-        if not eluta_url or not eluta_url.startswith("http"):
-            return None
-        try:
-            page.goto(eluta_url, wait_until="domcontentloaded", timeout=20_000)
-            _delay(1, 2)
-
-            # Look for an "Apply" button / link pointing to an external site
-            apply_el = page.query_selector(
-                "a[class*='apply'], a#apply-button, a[href*='apply'], "
-                "a[class*='Apply'], button[class*='apply']"
-            )
-            if apply_el:
-                href = apply_el.get_attribute("href") or ""
-                if href.startswith("http") and "eluta.ca" not in href:
-                    return href
-
-            # Fallback: any outbound link labelled "Apply" or "Apply Now"
-            for a in page.query_selector_all("a"):
-                text = (a.inner_text() or "").strip().lower()
-                if text in ("apply", "apply now", "apply online"):
-                    href = a.get_attribute("href") or ""
-                    if href.startswith("http") and "eluta.ca" not in href:
-                        return href
-
-        except Exception as exc:
-            log.debug("Could not resolve apply URL for %s: %s", eluta_url, exc)
-
-        return None
+        return {
+            "title": title,
+            "url": href,
+            "company": company,
+            "location": location,
+            "salary": salary,
+        }
 
 
 def _delay(lo: float, hi: float) -> None:
